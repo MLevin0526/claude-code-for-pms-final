@@ -24,6 +24,12 @@ prompt library built from your own questions.
 
 ### 1.
 
+please run a per responder breakdown and ticket counts from support_tickets against these dates and please provide a description of how pings are ranked
+
 ### 2.
 
+Can you confirm how the timeout tuning shipped?
+
 ### 3.
+
+Based on all the data above, please tell me the most important question I should be asking, and then answer it.  Thank you.
