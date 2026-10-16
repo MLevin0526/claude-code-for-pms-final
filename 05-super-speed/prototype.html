@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rook Dispatch Console — Quiet Responder Recovery (prototype)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: #e9ecf1; color: #1d2430; font-size: 14px; }
+  .proto-bar { background: #fff8d6; border-bottom: 1px solid #e6d98a; padding: 8px 16px; font-size: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .proto-bar .sw { margin-left: auto; display: inline-flex; border: 1px solid #b9ab5a; border-radius: 6px; overflow: hidden; }
+  .proto-bar .sw button { border: 0; background: #fff; padding: 6px 14px; cursor: pointer; font-size: 12px; }
+  .proto-bar .sw button.on { background: #1d2430; color: #fff; }
+  button.demo { border: 1px solid #b9ab5a; background: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  button.demo:disabled { opacity: .5; cursor: default; }
+  .banner.recovering { background: #eaf1ff; border-color: #b8cffc; color: #1d3f8a; }
+  .card.ok { border-color: #2fa14f; box-shadow: 0 0 0 2px #d4eedb; }
+  .bar.ok i { background: #2fa14f; }
+  .app { display: flex; gap: 20px; padding: 16px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+  /* Console window */
+  .win { width: 860px; max-width: 100%; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.18); overflow: hidden; }
+  .titlebar { background: #1d2430; color: #fff; display: flex; align-items: center; padding: 0 14px; height: 44px; gap: 22px; }
+  .titlebar .logo { font-weight: bold; letter-spacing: .04em; }
+  .titlebar nav a { color: #aab3c5; font-size: 13px; margin-right: 16px; text-decoration: none; padding: 14px 0; display: inline-block; }
+  .titlebar nav a.cur { color: #fff; border-bottom: 2px solid #5b9bff; }
+  .titlebar .who { margin-left: auto; font-size: 12px; color: #aab3c5; }
+  .body { display: flex; min-height: 540px; }
+  .side { width: 190px; background: #f4f6f9; border-right: 1px solid #dde1e8; padding: 14px 10px; font-size: 13px; }
+  .side h4 { margin: 0 0 8px 6px; font-size: 11px; text-transform: uppercase; color: #6b7487; letter-spacing: .06em; }
+  .side .it { padding: 7px 8px; border-radius: 5px; margin-bottom: 2px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .side .it:hover { background: #e6eaf1; }
+  .side .it.sel { background: #dbe7ff; font-weight: bold; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #2fa14f; display: inline-block; }
+  .dot.warn { background: #e0892b; }
+  .main { flex: 1; padding: 16px; min-width: 0; }
+  .main h2 { margin: 0 0 2px; font-size: 18px; }
+  .sub { font-size: 12px; color: #6b7487; }
+  .cards { display: flex; gap: 12px; margin-top: 14px; }
+  .card { flex: 1; border: 1px solid #d5d9e0; border-radius: 8px; padding: 12px; min-width: 0; }
+  .card.flag { border-color: #e0892b; box-shadow: 0 0 0 2px #fbe6c8; }
+  .card h3 { margin: 0; font-size: 15px; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #dff5e4; color: #1c6b34; margin: 4px 0 8px; }
+  .row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
+  .bar { height: 10px; background: #e3e6ec; border-radius: 5px; overflow: hidden; margin: 4px 0; }
+  .bar i { display: block; height: 100%; background: #3d7eff; }
+  .bar.low i { background: #e0892b; }
+  .after { display: none; }
+  body.is-after .after { display: block; }
+  body.is-after .before { display: none; }
+  .banner { margin-top: 10px; background: #fff4e0; border: 1px solid #f0c27a; color: #6b4300; border-radius: 6px; padding: 8px 10px; font-size: 13px; cursor: pointer; }
+  .banner:hover { background: #ffecc9; }
+  .banner b { display: block; }
+  .banner u { color: #1d56c8; }
+  .banner.cleared { background: #e6f6ea; border-color: #9bd3a9; color: #1c6b34; cursor: default; }
+  .feed { margin-top: 16px; border: 1px solid #dde1e8; border-radius: 8px; }
+  .feed h4 { margin: 0; padding: 8px 12px; background: #f4f6f9; font-size: 12px; border-bottom: 1px solid #dde1e8; border-radius: 8px 8px 0 0; }
+  .feed ul { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow: auto; }
+  .feed li { padding: 7px 12px; border-bottom: 1px solid #eef0f4; font-size: 12.5px; display: flex; gap: 10px; }
+  .feed li:last-child { border-bottom: 0; }
+  .feed li time { color: #8a93a4; width: 52px; flex: none; }
+  .feed li.new { background: #eaf7ee; }
+  /* Drawer */
+  .drawer { position: fixed; top: 0; right: -420px; width: 400px; height: 100%; background: #fff; box-shadow: -4px 0 14px rgba(0,0,0,.25); transition: right .25s; padding: 18px; z-index: 10; overflow: auto; }
+  .drawer.open { right: 0; }
+  .drawer h3 { margin: 0 0 4px; }
+  .drawer .x { position: absolute; top: 12px; right: 14px; border: 0; background: none; font-size: 20px; cursor: pointer; }
+  .drawer h5 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #6b7487; }
+  .drawer ul { margin: 0 0 0 18px; padding: 0; line-height: 1.55; font-size: 13px; }
+  .hist { display: flex; gap: 4px; align-items: flex-end; height: 70px; margin-top: 6px; }
+  .hist div { flex: 1; background: #3d7eff; border-radius: 2px 2px 0 0; position: relative; }
+  .hist div.q { background: #e0892b; }
+  .hist-l { display: flex; gap: 4px; font-size: 10px; color: #8a93a4; }
+  .hist-l span { flex: 1; text-align: center; }
+  button.act { background: #3d7eff; color: #fff; border: 0; border-radius: 6px; padding: 9px 14px; font-size: 13px; cursor: pointer; margin-top: 14px; width: 100%; }
+  button.act:disabled { background: #8fa0bf; cursor: default; }
+  button.ghost { background: #fff; color: #1d2430; border: 1px solid #c4cad6; margin-top: 8px; }
+  /* Phone */
+  .phone { width: 280px; background: #111; border-radius: 34px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.3); flex: none; }
+  .phone-label { text-align: center; font-size: 12px; color: #6b7487; margin-bottom: 8px; }
+  .screen { background: #fff; border-radius: 24px; min-height: 480px; padding: 16px 14px; }
+  .screen h3 { margin: 0 0 4px; font-size: 15px; }
+  .pill { font-size: 11px; color: #1c6b34; background: #dff5e4; display: inline-block; padding: 3px 10px; border-radius: 10px; margin-bottom: 12px; }
+  .msg { background: #eaf1ff; border: 1px solid #b8cffc; border-radius: 10px; padding: 10px; font-size: 13px; line-height: 1.45; margin-top: 10px; }
+  .idle { text-align: center; color: #8a93a4; margin-top: 70px; font-size: 13px; }
+  .idle b { display: block; color: #5b6578; font-size: 15px; margin-bottom: 4px; }
+  .ping { border: 1px solid #d5d9e0; border-radius: 12px; padding: 12px; margin-top: 10px; font-size: 13px; animation: buzz .5s 2; }
+  @keyframes buzz { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  .ping .t { font-size: 12px; color: #5b6578; margin-top: 2px; }
+  .cd { margin-top: 10px; }
+  .cdnum { font-size: 34px; font-weight: bold; line-height: 1; }
+  .cdnum small { font-size: 12px; font-weight: normal; color: #5b6578; margin-left: 4px; }
+  .cdbar { height: 8px; background: #e3e6ec; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .cdbar i { display: block; height: 100%; width: 100%; background: #3d7eff; }
+  .cd.urgent .cdnum { color: #c4361f; }
+  .cd.urgent .cdbar i { background: #c4361f; }
+  .ff { font-size: 11px; color: #1d56c8; cursor: pointer; text-decoration: underline; display: inline-block; margin-top: 6px; }
+  .ping .btns { display: flex; gap: 8px; margin-top: 10px; }
+  .ping .btns button { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #c4cad6; background: #fff; cursor: pointer; font-size: 13px; }
+  .ping .btns .take { background: #3d7eff; color: #fff; border-color: #3d7eff; }
+  /* iPhone */
+  .phone.iphone { width: 300px; background: #1b1b1d; border-radius: 52px; padding: 10px; box-shadow: 0 0 0 2px #3a3a3c inset, 0 6px 18px rgba(0,0,0,.35); position: relative; flex: none; }
+  .island { position: absolute; top: 20px; left: 50%; margin-left: -42px; width: 84px; height: 24px; background: #000; border-radius: 14px; z-index: 3; }
+  .iphone .screen { background: #f2f2f7; border-radius: 42px; min-height: 620px; padding: 0; display: flex; flex-direction: column; font-family: -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; overflow: hidden; color: #000; }
+  .status { display: flex; justify-content: space-between; padding: 14px 26px 6px; font-size: 13px; font-weight: 600; }
+  .navt { display: flex; justify-content: space-between; align-items: center; padding: 10px 18px 6px; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+  .navt .pill { font-size: 11px; font-weight: 600; margin: 0; }
+  .pages { flex: 1; padding: 4px 14px 10px; overflow-y: auto; max-height: 470px; }
+  .tabbar { display: flex; border-top: 1px solid #d1d1d6; background: #f9f9f9; padding-top: 6px; }
+  .tabbar button { flex: 1; border: 0; background: none; font-size: 10px; color: #8e8e93; cursor: pointer; padding: 2px 0 4px; font-family: inherit; }
+  .tabbar button i { display: block; font-style: normal; font-size: 18px; line-height: 1.2; }
+  .tabbar button.on { color: #007aff; }
+  .homebar { width: 110px; height: 5px; background: #111; border-radius: 3px; margin: 6px auto 8px; }
+  .iphone .msg { background: #fff; border: 0; border-radius: 14px; }
+  .iphone .ping { background: #fff; border: 0; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .iphone .ping .btns button { border-radius: 12px; border: 0; background: #e5e5ea; padding: 11px; font-weight: 600; }
+  .iphone .ping .btns .take { background: #34c759; color: #fff; }
+  .iphone .cdbar i { background: #007aff; }
+  .iphone .cd.urgent .cdbar i { background: #ff3b30; }
+  .gcard { background: #fff; border-radius: 14px; padding: 12px; margin-top: 10px; font-size: 13px; line-height: 1.45; }
+  .gcard h5 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #6c6c70; }
+  .hchart { display: flex; gap: 4px; align-items: flex-end; height: 90px; }
+  .hcol { flex: 1; display: flex; flex-direction: column-reverse; }
+  .hcol i { display: block; }
+  .hcol .tk { background: #007aff; } .hcol .ms { background: #ff9500; } .hcol .td { background: #c7c7cc; }
+  .hxl { display: flex; gap: 4px; font-size: 8px; color: #8e8e93; margin-top: 3px; }
+  .hxl span { flex: 1; text-align: center; }
+  .legend { font-size: 10px; color: #6c6c70; margin-top: 6px; }
+  .legend b { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 3px 0 8px; }
+  .hrow { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #efeff4; font-size: 12px; }
+  .hrow:last-child { border-bottom: 0; }
+  .chip { display: block; width: 100%; text-align: left; background: #f2f2f7; border: 2px solid transparent; border-radius: 10px; padding: 9px 10px; margin-top: 6px; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .chip.on { border-color: #007aff; background: #e5f0ff; }
+  textarea.note { width: 100%; height: 56px; margin-top: 8px; border: 1px solid #d1d1d6; border-radius: 10px; padding: 8px; font-family: inherit; font-size: 13px; resize: none; }
+  .blue { display: block; width: 100%; margin-top: 10px; padding: 11px; border: 0; border-radius: 12px; background: #007aff; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .blue:disabled { background: #a8cdfb; cursor: default; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <b>Prototype</b> Fictional data, cover names only. Click the orange banner on Farlight to start.
+  <div class="sw">
+    <button id="sBefore" class="on" onclick="setMode(false)">Before (today)</button>
+    <button id="sAfter" onclick="setMode(true)">After (proposed)</button>
+  </div>
+  <button class="demo" id="simBtn" onclick="simulate()">&#9654; Simulate recovery</button>
+  <button class="demo" onclick="restart()">&#8635; Restart</button>
+  <span id="dayLabel" style="font-weight:bold"></span>
+</div>
+
+<div class="app">
+  <!-- ======= HANDLER CONSOLE ======= -->
+  <div class="win">
+    <div class="titlebar">
+      <span class="logo">ROOK DISPATCH</span>
+      <nav><a>Callouts</a><a class="cur">Responders</a><a>Coverage</a><a>Reports</a></nav>
+      <span class="who">Linda Pruitt · Handler</span>
+    </div>
+    <div class="body">
+      <div class="side">
+        <h4>My responders</h4>
+        <div class="it sel">Farlight <span class="dot warn after" id="miteDot"></span><span class="dot before"></span></div>
+        <h4 style="margin-top:18px">Comparable</h4>
+        <div class="it">Captain Vantage <span class="dot"></span></div>
+        <h4 style="margin-top:18px">Filters</h4>
+        <div class="it">Available now</div>
+        <div class="it">Uptown</div>
+      </div>
+      <div class="main">
+        <h2>Responder coverage</h2>
+        <div class="sub">Week of 31 Aug · Farlight (Uptown) next to Captain Vantage (Hillcrest) for comparison</div>
+
+        <div class="cards">
+          <div class="card" id="miteCard">
+            <h3>Farlight</h3>
+            <div class="sub">Uptown · Linda Pruitt</div>
+            <span class="tag">Available</span>
+            <div class="row"><span>Pings this week</span><b id="mitePings">0</b></div>
+            <div class="after">
+              <div class="bar low" id="miteBar"><i id="miteFill" style="width:0%"></i></div>
+              <div class="sub" id="miteUsual">0% of usual (usually 12)</div>
+            </div>
+            <div class="row"><span>Taken / missed / turned down</span><span id="miteOutcomes">0 / 0 / 0</span></div>
+            <div class="sub" id="issueLine" style="margin-top:6px;color:#6b4300"></div>
+            <div class="banner after" id="banner" onclick="openDrawer()">
+              <b>Gone quiet</b>
+              <span id="bannerText">0 pings this week, usually 12. Last 4 pings: 3 missed, 1 turned down, none taken.</span> <u>Why?</u>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Captain Vantage</h3>
+            <div class="sub">Hillcrest · Mr. Ambrose</div>
+            <span class="tag">Available</span>
+            <div class="row"><span>Pings this week</span><b>18</b></div>
+            <div class="after">
+              <div class="bar"><i style="width:100%"></i></div>
+              <div class="sub">Busier than usual (usually 12)</div>
+            </div>
+            <div class="row"><span>Taken / missed / turned down</span><span>13 / 2 / 3</span></div>
+          </div>
+        </div>
+
+        <div class="sub before" style="margin-top:14px">Today: Farlight's card just says "Available" with 0 pings. Nothing flags that they were pinged about 12 times a week until August.</div>
+        <div class="sub after" style="margin-top:14px">Both cards are on the same scale, this week against the responder's own usual. Captain Vantage went up while Farlight dropped out.</div>
+
+        <div class="sub" id="scoreLine" style="margin-top:10px"></div>
+        <div class="feed">
+          <h4>Activity</h4>
+          <ul id="feed">
+            <li><time>Today</time><span>Captain Vantage took an Uptown callout</span></li>
+            <li><time>31 Aug</time><span>Captain Vantage took an Uptown callout (Farlight not pinged)</span></li>
+            <li><time>28 Aug</time><span>Farlight's last ping: missed (ping wait 60 s)</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= RESPONDER PHONE ======= -->
+  <div>
+    <div class="phone-label">Responder phone · Farlight</div>
+    <div class="phone iphone">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="status"><span>9:41</span><span>5G &#9646;</span></div>
+        <div class="navt"><span id="phTitle">Pings</span><span class="pill">Available</span></div>
+        <div class="pages">
+          <div id="pgPings">
+            <div id="pIdle">
+              <div class="idle before"><b>No pings</b>Nothing has come in this week.</div>
+              <div class="after">
+                <div class="msg" id="phoneMsg"><b>It's been quiet.</b><br>Your pings are down from usual. That's not a fault with your phone. Dispatch will make sure you get your next matching ping soon.</div>
+                <div class="idle" style="margin-top:50px" id="phoneIdle">Waiting for your next ping&hellip;</div>
+              </div>
+            </div>
+            <div id="pPing" class="hide">
+              <div class="ping">
+                <b>Callout &middot; Uptown</b>
+                <div class="t">Uptown &middot; 0.8 mi</div>
+                <div class="cd" id="cd">
+                  <div class="cdnum"><span id="cdNum">90</span><small>seconds to answer</small></div>
+                  <div class="cdbar"><i id="cdFill"></i></div>
+                  <div class="t" id="cdLabel" style="margin-top:6px"></div>
+                  <span class="ff" id="ff" onclick="fastForward()">Skip ahead (let it run out)</span>
+                </div>
+                <div class="btns">
+                  <button onclick="answer('turned down')">Turn down</button>
+                  <button class="take" onclick="answer('taken')">Take it</button>
+                </div>
+              </div>
+            </div>
+            <div id="pDone" class="hide"></div>
+          </div>
+
+          <div id="pgHistory" class="hide">
+            <div class="gcard">
+              <h5>Pings per week</h5>
+              <div class="hchart" id="hChart"></div>
+              <div class="hxl" id="hLabels"></div>
+              <div class="legend"><b style="background:#007aff"></b>Taken<b style="background:#ff9500"></b>Missed<b style="background:#c7c7cc"></b>Turned down</div>
+            </div>
+            <div class="gcard" id="hSummary"></div>
+            <div class="gcard"><h5>Week by week</h5><div id="hRows"></div></div>
+          </div>
+
+          <div id="pgReport" class="hide">
+            <div class="gcard" id="knownCard"></div>
+            <div class="gcard" id="reportForm">
+              <h5>Tell your handler what you know</h5>
+              <button class="chip" id="chip0" onclick="pickIssue(0)">My phone didn't buzz</button>
+              <button class="chip" id="chip1" onclick="pickIssue(1)">The alert came late</button>
+              <button class="chip" id="chip2" onclick="pickIssue(2)">Pings were gone before I could answer</button>
+              <button class="chip" id="chip3" onclick="pickIssue(3)">I was away or off shift</button>
+              <button class="chip" id="chip4" onclick="pickIssue(4)">Notification or phone settings problem</button>
+              <button class="chip" id="chip5" onclick="pickIssue(5)">Something else</button>
+              <textarea class="note" id="issueNote" placeholder="Anything else Linda should know? (optional)"></textarea>
+              <button class="blue" id="issueSend" onclick="sendIssue()" disabled>Send to Linda Pruitt</button>
+            </div>
+            <div class="gcard hide" id="reportDone"><b>Sent to Linda Pruitt.</b><br>She can see it on your card in the console.</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <button id="tabPings" class="on" onclick="showTab('pings')"><i>&#9673;</i>Pings</button>
+          <button id="tabHistory" onclick="showTab('history')"><i>&#9636;</i>History</button>
+          <button id="tabReport" onclick="showTab('report')"><i>&#9873;</i>Report</button>
+        </div>
+        <div class="homebar"></div>
+      </div>
+    </div>    <div style="text-align:center;margin-top:10px">
+      <button class="demo before" id="plainBtn" onclick="sendPlain()">Send a ping to Farlight (60 s wait, as today)</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= DRAWER ======= -->
+<div class="drawer" id="drawer">
+  <button class="x" onclick="closeDrawer()">×</button>
+  <h3>Farlight · gone quiet</h3>
+  <div class="sub">Pings per week, last 6 weeks (usual: 12). Last bar updates as Farlight recovers.</div>
+  <div class="hist" id="hist">
+    <div style="height:100%"></div><div style="height:92%"></div><div style="height:77%"></div>
+    <div class="q" style="height:23%"></div><div class="q" style="height:8%"></div><div class="q" id="histNow" style="height:2%"></div>
+  </div>
+  <div class="hist-l"><span>27 Jul</span><span>3 Aug</span><span>10 Aug</span><span>17 Aug</span><span>24 Aug</span><span>31 Aug</span></div>
+
+  <h5>What's happening</h5>
+  <ul>
+    <li>Before 4.2 (12 Aug) Farlight missed about 1 ping in 25 and was pinged on all 59 Uptown callouts. Since then, 7 of 14 pings were missed and only 6 of 31 Uptown callouts reached them.</li>
+    <li>Their turn-down rate hasn't changed (about 1 in 5). They are slow to answer, not unwilling. But a lower rank means fewer pings, and with no pings there is no way to earn it back.</li>
+  </ul>
+  <h5>What Dispatch will do</h5>
+  <ul>
+    <li>Send Farlight one matching ping every 48 hours until pings are back above half of usual.</li>
+    <li>Count a missed ping as a smaller penalty than a turn-down.</li>
+  </ul>
+  <button class="act" id="reentry" onclick="sendReentry()">Send re-entry ping now</button>
+  <button class="act ghost" onclick="closeDrawer()">Close</button>
+</div>
+
+<script>
+  var USUAL = 12, HALF = 6;
+  var FEED0 = ['<li><time>Today</time><span>Captain Vantage took an Uptown callout</span></li>',
+               '<li><time>31 Aug</time><span>Captain Vantage took an Uptown callout (Farlight not pinged)</span></li>',
+               "<li><time>28 Aug</time><span>Farlight's last ping: missed (ping wait 60 s)</span></li>"];
+  var STEPS = [
+    {day: 2,  out: 'taken',  extra: 0},
+    {day: 4,  out: 'taken',  extra: 0},
+    {day: 6,  out: 'missed', extra: 1},
+    {day: 8,  out: 'taken',  extra: 1},
+    {day: 10, out: 'taken',  extra: 2},
+    {day: 12, out: 'taken',  extra: 2}
+  ];
+  var s, running = false, afterMode = false, timers = [];
+  function $(id) { return document.getElementById(id); }
+
+  function freshState() { return {pings: 0, taken: 0, missed: 0, turned: 0, score: 0, day: 0, reentry: 0}; }
+  function phase() {
+    if (s.pings >= USUAL) return 'usual';
+    if (s.pings >= HALF) return 'recovered';
+    return s.reentry > 0 ? 'recovering' : 'quiet';
+  }
+  function addFeed(text) {
+    var li = document.createElement('li'); li.className = 'new';
+    li.innerHTML = '<time>' + (s.day ? 'Day ' + s.day : 'Now') + '</time><span>' + text + '</span>';
+    var f = $('feed'); f.insertBefore(li, f.firstChild);
+  }
+  function render() {
+    var ph = phase(), pct = Math.min(100, Math.round(s.pings / USUAL * 100));
+    $('mitePings').textContent = s.pings;
+    $('miteFill').style.width = pct + '%';
+    $('miteUsual').textContent = pct + '% of usual (usually ' + USUAL + ')';
+    $('miteBar').className = 'bar ' + (ph === 'quiet' || ph === 'recovering' ? 'low' : 'ok');
+    $('miteOutcomes').textContent = s.taken + ' / ' + s.missed + ' / ' + s.turned;
+    $('histNow').style.height = Math.max(pct, 2) + '%';
+    $('histNow').className = (ph === 'recovered' || ph === 'usual') ? '' : 'q';
+    $('dayLabel').textContent = s.day ? 'Day ' + s.day : '';
+    $('scoreLine').innerHTML = s.reentry ? 'Farlight routing score since re-entry began: <b>' + (s.score >= 0 ? '+' : '') + s.score.toFixed(2) + '</b> (taken +0.08, missed -0.06)' : '';
+    var card = $('miteCard'), bn = $('banner'), dot = $('miteDot'), msg = $('phoneMsg'), idle = $('phoneIdle');
+    card.classList.toggle('flag', afterMode && (ph === 'quiet' || ph === 'recovering'));
+    card.classList.toggle('ok', afterMode && (ph === 'recovered' || ph === 'usual'));
+    dot.className = 'dot after' + ((ph === 'quiet' || ph === 'recovering') ? ' warn' : '');
+    if (ph === 'quiet') {
+      bn.className = 'banner after';
+      bn.innerHTML = '<b>Gone quiet</b>' + s.pings + ' pings this week, usually 12. Last 4 pings: 3 missed, 1 turned down, none taken. <u>Why?</u>';
+      bn.onclick = openDrawer;
+      msg.innerHTML = "<b>It's been quiet.</b><br>Your pings are down from usual. That's not a fault with your phone. Dispatch will make sure you get your next matching ping soon.";
+      idle.textContent = 'Waiting for your next ping…';
+    } else if (ph === 'recovering') {
+      bn.className = 'banner after recovering';
+      bn.innerHTML = '<b>Recovering</b>' + s.pings + ' of ' + HALF + ' pings needed to clear the alert. Next re-entry ping in 48 hours. <u>Details</u>';
+      bn.onclick = openDrawer;
+      msg.innerHTML = "<b>You're back in the rotation.</b><br>Thanks for answering. Pings should pick up as your rank recovers.";
+      idle.textContent = 'Waiting for your next ping…';
+    } else if (ph === 'recovered') {
+      bn.className = 'banner after cleared';
+      bn.innerHTML = '<b>Recovered</b>Pings are back above half of usual (' + s.pings + ' of 12). Alert cleared.';
+      bn.onclick = null;
+      msg.innerHTML = '<b>Pings are picking up.</b><br>You are getting pings at close to your usual rate again.';
+      idle.textContent = 'Waiting for your next ping…';
+    } else {
+      bn.className = 'banner after cleared';
+      bn.innerHTML = '<b>Back to usual</b>' + s.pings + ' pings this week, at or above the usual 12.';
+      bn.onclick = null;
+      msg.innerHTML = '<b>All caught up.</b><br>You are back to your usual pings.';
+      idle.textContent = 'Waiting for your next ping…';
+    }
+    var rb = $('reentry');
+    rb.disabled = running || ph === 'recovered' || ph === 'usual';
+    rb.textContent = (ph === 'recovered' || ph === 'usual') ? 'Recovered' : (s.reentry ? 'Send another re-entry ping' : 'Send re-entry ping now');
+    $('simBtn').disabled = running || ph === 'usual';
+    renderHistory();
+  }
+  function record(out, auto) {
+    s.pings += 1; s.reentry += 1;
+    if (out === 'taken') { s.taken += 1; s.score += 0.08; }
+    else if (out === 'missed') { s.missed += 1; s.score -= 0.06; }
+    else { s.turned += 1; s.score -= 0.12; }
+    var note = out === 'taken' ? 'took the re-entry ping · score +0.08'
+             : out === 'missed' ? 'missed the re-entry ping · smaller penalty -0.06'
+             : 'turned down the re-entry ping · normal penalty -0.12';
+    addFeed('Farlight ' + note);
+  }
+  var cdT = null, cdLeft = 0, cdTotal = 0, cdMode = 'real', cdSpeed = 1, pingKind = 'reentry';
+  function pingWait() { return afterMode ? 90 : 60; }
+  function paintCd() {
+    $('cdNum').textContent = Math.ceil(cdLeft);
+    $('cdFill').style.width = Math.max(0, cdLeft / cdTotal * 100) + '%';
+    $('cd').classList.toggle('urgent', cdLeft <= cdTotal * 0.25);
+  }
+  function stopCountdown() { if (cdT) { clearInterval(cdT); cdT = null; } }
+  function startCountdown(total, mode) {
+    stopCountdown();
+    cdTotal = total; cdLeft = total; cdMode = mode; cdSpeed = 1;
+    $('cdLabel').textContent = 'Ping wait: ' + total + ' s' + (afterMode ? ' (restored from 60 s)' : ' (today, since 4.2)');
+    $('ff').style.display = mode === 'real' ? '' : 'none';
+    paintCd();
+    cdT = setInterval(tickCd, 100);
+  }
+  function tickCd() {
+    var step = cdMode === 'real' ? 0.1 * cdSpeed : cdMode === 'fast-expire' ? cdTotal * 0.1 : cdTotal * 0.07;
+    cdLeft -= step;
+    if (cdLeft <= 0) { cdLeft = 0; paintCd(); stopCountdown(); if (cdMode === 'real') expire(); return; }
+    paintCd();
+  }
+  function fastForward() { cdSpeed = 25; }
+  function expire() {
+    if (pingKind === 'plain') {
+      showPhoneResult('gone');
+      addFeed('Farlight missed a ping (ping wait ' + cdTotal + ' s) · went to the next responder');
+    } else {
+      showPhoneResult('missed'); record('missed'); render();
+    }
+  }
+  function showPhonePing(kind, mode) {
+    pingKind = kind || 'reentry';
+    showTab('pings');
+    $('pIdle').classList.add('hide'); $('pDone').classList.add('hide'); $('pPing').classList.remove('hide');
+    startCountdown(pingWait(), mode || 'real');
+  }
+  function sendPlain() {
+    if (running) return;
+    showPhonePing('plain', 'real');
+  }
+  function showPhoneResult(out) {
+    stopCountdown();
+    $('pPing').classList.add('hide');
+    var d = $('pDone'); d.classList.remove('hide');
+    d.innerHTML = out === 'taken'
+      ? '<div class="msg"><b>Taken.</b> Your routing score goes up, so you will be pinged more often.</div>'
+      : out === 'missed'
+      ? '<div class="msg"><b>Missed.</b> That counts against you a little, but less than a turn-down. Your next ping is on its way.</div>'
+      : out === 'gone'
+      ? '<div class="msg"><b>Gone.</b> The ping wait ran out and the callout went to the next responder. This is the "gone before I could answer" ticket.</div>'
+      : '<div class="msg"><b>Turned down.</b> No problem. Your next matching ping is still on its way.</div>';
+  }
+  function setMode(after) {
+    afterMode = after;
+    document.body.classList.toggle('is-after', after);
+    $('sAfter').classList.toggle('on', after);
+    $('sBefore').classList.toggle('on', !after);
+    if (!after) closeDrawer();
+    render();
+  }
+  function openDrawer() { $('drawer').classList.add('open'); }
+  function closeDrawer() { $('drawer').classList.remove('open'); }
+  function sendReentry() {
+    addFeed('Re-entry ping sent to Farlight (quiet recovery)');
+    showPhonePing('reentry', 'real');
+    $('reentry').disabled = true;
+  }
+  function answer(out) {
+    if (running) return;
+    if (pingKind === 'plain') {
+      showPhoneResult(out);
+      addFeed('Farlight ' + (out === 'taken' ? 'took' : 'turned down') + ' a regular Uptown ping (demo only)');
+      return;
+    }
+    showPhoneResult(out);
+    record(out);
+    render();
+    closeDrawer();
+  }
+  function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+  function simulate() {
+    if (running) return;
+    if (!afterMode) setMode(true);
+    if (phase() === 'usual') return;
+    running = true; closeDrawer(); render();
+    var t = 0;
+    STEPS.forEach(function (st) {
+      if (s.reentry >= STEPS.indexOf(st) + 1 && s.day >= st.day) return;
+      later(function () {
+        s.day = st.day;
+        addFeed('Re-entry ping sent to Farlight (quiet recovery)');
+        showPhonePing('reentry', st.out === 'missed' ? 'fast-expire' : 'fast-answer'); render();
+      }, t += 900);
+      later(function () {
+        showPhoneResult(st.out);
+        record(st.out, true);
+        for (var i = 0; i < st.extra; i++) {
+          s.pings += 1; s.taken += 1; s.score += 0.08;
+          addFeed('Farlight took a regular Uptown ping · score +0.08');
+        }
+        render();
+      }, t += 1100);
+    });
+    later(function () { running = false; render(); }, t + 200);
+  }
+  function restart() {
+    timers.forEach(clearTimeout); timers = []; running = false; stopCountdown();
+    resetIssue(); showTab('pings');
+    s = freshState();
+    $('feed').innerHTML = FEED0.join('');
+    $('pPing').classList.add('hide'); $('pDone').classList.add('hide'); $('pIdle').classList.remove('hide');
+    closeDrawer();
+    setMode(false);
+  }
+  var HIST = [['29 Jun',12,9,0,3],['6 Jul',12,9,0,3],['13 Jul',11,8,1,2],['20 Jul',12,9,1,2],['27 Jul',13,10,0,3],['3 Aug',12,8,1,3],['10 Aug',10,4,4,2],['17 Aug',3,0,2,1],['24 Aug',1,0,1,0]];
+  var ISSUES = ["My phone didn't buzz", 'The alert came late', 'Pings were gone before I could answer', 'I was away or off shift', 'Notification or phone settings problem', 'Something else'];
+  var issueSel = -1;
+  function esc(x) { return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function showTab(n) {
+    var names = ['pings', 'history', 'report'], titles = {pings: 'Pings', history: 'History', report: 'Report'};
+    for (var i = 0; i < names.length; i++) {
+      var k = names[i], cap = k.charAt(0).toUpperCase() + k.slice(1);
+      $('pg' + cap).classList.toggle('hide', k !== n);
+      $('tab' + cap).classList.toggle('on', k === n);
+    }
+    $('phTitle').textContent = titles[n];
+  }
+  function renderHistory() {
+    var rows = HIST.concat([['31 Aug', s.pings, s.taken, s.missed, s.turned]]);
+    var chart = '', labels = '', list = '';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      chart += '<div class="hcol"><i class="tk" style="height:' + r[2] * 6 + 'px"></i><i class="ms" style="height:' + r[3] * 6 + 'px"></i><i class="td" style="height:' + r[4] * 6 + 'px"></i></div>';
+      labels += '<span>' + r[0].split(' ')[0] + '</span>';
+      var last = i === rows.length - 1;
+      list = '<div class="hrow"><span>' + (last ? '<b>This week</b>' : 'Week of ' + r[0]) + '</span><span>' + r[1] + ' pings &middot; ' + r[2] + ' / ' + r[3] + ' / ' + r[4] + '</span></div>' + list;
+    }
+    $('hChart').innerHTML = chart;
+    $('hLabels').innerHTML = labels;
+    $('hRows').innerHTML = list + '<div class="legend" style="margin-top:6px">Taken / missed / turned down. Weeks start Monday.</div>';
+    var sum = '<h5>How you\'re doing</h5>' +
+      'Before 4.2 (6 weeks to 9 Aug): <b>74%</b> of pings taken, 4% missed, 22% turned down.<br>' +
+      'Week of 10 Aug on (includes the 4.2 release on 12 Aug): <b>29%</b> taken, 50% missed, 21% turned down.<br>' +
+      '<span style="color:#6c6c70">Your turn-downs haven\'t changed. What changed is the missed pings and how many you get.</span>';
+    if (s.reentry) sum += '<br><b>Since re-entry pings began:</b> ' + s.taken + ' taken of ' + s.pings + '.';
+    $('hSummary').innerHTML = sum;
+    var ph = phase(), known;
+    if (!afterMode) known = 'Since 12 Aug the ping wait is <b>60 s</b>, down from 90 s. If pings were gone before you could answer, that is likely why.';
+    else if (ph === 'recovered' || ph === 'usual') known = 'Ping wait is back to <b>90 s</b>, and your pings are back near usual. Thanks for hanging in.';
+    else known = 'Ping wait is back to <b>90 s</b>. Dispatch can see your pings have dropped and is sending you re-entry pings.';
+    $('knownCard').innerHTML = '<h5>Known to Dispatch</h5>' + known;
+  }
+  function pickIssue(i) {
+    issueSel = i;
+    for (var j = 0; j < ISSUES.length; j++) $('chip' + j).classList.toggle('on', j === i);
+    $('issueSend').disabled = false;
+  }
+  function sendIssue() {
+    if (issueSel < 0) return;
+    var note = $('issueNote').value;
+    addFeed('Farlight reported: ' + esc(ISSUES[issueSel]) + (note ? ' &mdash; &ldquo;' + esc(note) + '&rdquo;' : ''));
+    $('issueLine').textContent = 'Reported by Farlight: ' + ISSUES[issueSel];
+    $('reportForm').classList.add('hide');
+    $('reportDone').classList.remove('hide');
+  }
+  function resetIssue() {
+    issueSel = -1;
+    for (var j = 0; j < ISSUES.length; j++) $('chip' + j).classList.remove('on');
+    $('issueNote').value = '';
+    $('issueSend').disabled = true;
+    $('issueLine').textContent = '';
+    $('reportForm').classList.remove('hide');
+    $('reportDone').classList.add('hide');
+  }  s = freshState(); render();
+</script></body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rook Dispatch — Quiet Responder Recovery (prototype)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: #eef0f3; color: #1d2430; }
+  header { background: #1d2430; color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .note { font-size: 12px; opacity: .7; }
+  .toggle { margin-left: auto; display: inline-flex; border: 1px solid #5b6578; border-radius: 6px; overflow: hidden; }
+  .toggle button { background: transparent; color: #fff; border: 0; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+  .toggle button.on { background: #3d7eff; }
+  main { display: flex; gap: 28px; padding: 24px; flex-wrap: wrap; align-items: flex-start; justify-content: center; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #5b6578; margin: 0 0 8px; }
+  .console { width: 720px; max-width: 100%; background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.15); padding: 16px; }
+  .cards { display: flex; gap: 14px; }
+  .card { flex: 1; border: 1px solid #d5d9e0; border-radius: 8px; padding: 12px; position: relative; }
+  .card h3 { margin: 0 0 2px; font-size: 16px; }
+  .sub { font-size: 12px; color: #5b6578; }
+  .status { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #dff5e4; color: #1c6b34; margin-top: 6px; }
+  .stats { margin-top: 10px; font-size: 13px; line-height: 1.6; }
+  .bar { height: 10px; background: #e3e6ec; border-radius: 5px; overflow: hidden; margin: 4px 0 2px; }
+  .bar > i { display: block; height: 100%; background: #3d7eff; }
+  .bar.low > i { background: #e0892b; }
+  .bar.high > i { background: #3d7eff; }
+  .after-only { display: none; }
+  body.after .after-only { display: block; }
+  body.after .before-only { display: none; }
+  .banner { margin-top: 10px; background: #fff4e0; border: 1px solid #f0c27a; color: #6b4300; border-radius: 6px; padding: 8px 10px; font-size: 13px; cursor: pointer; }
+  .banner b { display: block; margin-bottom: 2px; }
+  .detail { margin-top: 8px; background: #f6f8fb; border: 1px solid #d5d9e0; border-radius: 6px; padding: 10px; font-size: 12.5px; line-height: 1.5; display: none; }
+  .detail.open { display: block; }
+  .detail ul { margin: 4px 0 8px 18px; padding: 0; }
+  button.act { background: #3d7eff; color: #fff; border: 0; border-radius: 5px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  button.act:disabled { background: #9aa4b6; cursor: default; }
+  .log { margin-top: 14px; border-top: 1px solid #e3e6ec; padding-top: 10px; font-size: 12px; color: #5b6578; min-height: 48px; }
+  .phone { width: 300px; background: #111; border-radius: 34px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  .screen { background: #fff; border-radius: 22px; min-height: 520px; padding: 18px 14px; position: relative; }
+  .screen h3 { margin: 0 0 4px; font-size: 15px; }
+  .pill { font-size: 12px; color: #1c6b34; background: #dff5e4; display: inline-block; padding: 3px 10px; border-radius: 10px; margin-bottom: 14px; }
+  .ping { border: 1px solid #d5d9e0; border-radius: 12px; padding: 12px; margin-top: 12px; font-size: 13px; }
+  .ping .t { font-size: 12px; color: #5b6578; }
+  .ping .btns { display: flex; gap: 8px; margin-top: 10px; }
+  .ping .btns button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #c4cad6; background: #fff; font-size: 13px; cursor: pointer; }
+  .ping .btns button.take { background: #3d7eff; color: #fff; border-color: #3d7eff; }
+  .msg { background: #eaf1ff; border: 1px solid #b8cffc; border-radius: 10px; padding: 10px; font-size: 13px; line-height: 1.45; margin-top: 12px; }
+  .empty { text-align: center; color: #8a93a4; margin-top: 90px; font-size: 13px; }
+  .empty b { display: block; font-size: 15px; color: #5b6578; margin-bottom: 4px; }
+  .caption { max-width: 300px; font-size: 12px; color: #5b6578; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Rook Dispatch · Quiet Responder Recovery</h1>
+  <span class="note">Prototype for discussion. Fictional data. Cover names only.</span>
+  <div class="toggle">
+    <button id="bBefore" class="on" onclick="setMode(false)">Before (today)</button>
+    <button id="bAfter" onclick="setMode(true)">After (proposed)</button>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>Handler console · Kip</h2>
+    <div class="console">
+      <div class="cards">
+        <div class="card">
+          <h3>Meteor Mite</h3>
+          <div class="sub">Available · Uptown</div>
+          <span class="status">Available</span>
+          <div class="stats">
+            <div class="before-only">Pings this week: <b id="miteBefore">1</b></div>
+            <div class="after-only">
+              Pings this week: <b id="mitePings">1</b> <span class="sub">(usually 12)</span>
+              <div class="bar low"><i style="width:8%"></i></div>
+              <div class="sub">8% of usual</div>
+            </div>
+            <div>Taken: 1 · Missed: 1 · Turned down: 0</div>
+          </div>
+          <div class="banner after-only" id="banner" onclick="toggleDetail()">
+            <b>Gone quiet</b>
+            1 ping this week, usually 12. Last 3 pings missed. <u>Why?</u>
+          </div>
+          <div class="detail" id="detail">
+            <b>What's happening</b>
+            <ul>
+              <li>Missed pings lower Mite's rank.</li>
+              <li>A lower rank means fewer pings, so there's no way to earn it back.</li>
+              <li>Mite answered 3 of the last 4 pings, but each took longer than the ping wait.</li>
+            </ul>
+            <b>What Dispatch will do</b>
+            <ul>
+              <li>Send Mite one matching ping every 48 hours.</li>
+              <li>Count a missed ping as a smaller penalty than a turn-down.</li>
+            </ul>
+            <button class="act" id="reentry" onclick="sendReentry()">Send re-entry ping now</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>The Gale</h3>
+          <div class="sub">Available · Uptown</div>
+          <span class="status">Available</span>
+          <div class="stats">
+            <div class="before-only">Pings this week: <b>69</b></div>
+            <div class="after-only">
+              Pings this week: <b>69</b> <span class="sub">(usually 40)</span>
+              <div class="bar high"><i style="width:100%"></i></div>
+              <div class="sub">Busier than usual · 13 turned down</div>
+            </div>
+            <div>Taken: 38 · Missed: 3 · Turned down: 13</div>
+          </div>
+        </div>
+      </div>
+      <div class="log" id="log">
+        <span class="before-only">Today: two cards, two different stories, and nothing on screen to explain why. Switch to "After" to see the proposal.</span>
+        <span class="after-only">Both cards are now on the same scale: this week vs the responder's own usual. Click "Why?" on Mite's banner.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Responder phone · Meteor Mite</h2>
+    <div class="phone">
+      <div class="screen">
+        <h3>Meteor Mite</h3>
+        <div class="pill">Available</div>
+
+        <div id="phoneQuiet">
+          <div class="empty before-only"><b>No pings</b>Nothing has come in this week.</div>
+          <div class="after-only">
+            <div class="msg">
+              <b>It's been quiet.</b><br>
+              Your pings are down from usual. That's not a fault with your phone. Dispatch is making sure you get your next matching ping soon.
+            </div>
+            <div class="empty" style="margin-top:50px">Waiting for your next ping…</div>
+          </div>
+        </div>
+
+        <div id="phonePing" style="display:none">
+          <div class="ping">
+            <div><b>Callout · Uptown</b></div>
+            <div class="t">Structural-entry · 0.8 mi</div>
+            <div class="t">First ping in a while. Answer within 90 s.</div>
+            <div class="btns">
+              <button onclick="answer('turned down')">Turn down</button>
+              <button class="take" onclick="answer('taken')">Take it</button>
+            </div>
+          </div>
+        </div>
+        <div id="phoneDone" style="display:none"></div>
+      </div>
+    </div>
+    <div class="caption">After you click "Send re-entry ping now" on the console, the ping appears here. Taking it earns +0.08 back.</div>
+  </section>
+</main>
+
+<script>
+  function setMode(after) {
+    document.body.classList.toggle('after', after);
+    document.getElementById('bAfter').classList.toggle('on', after);
+    document.getElementById('bBefore').classList.toggle('on', !after);
+    if (!after) {
+      document.getElementById('detail').classList.remove('open');
+      document.getElementById('phonePing').style.display = 'none';
+      document.getElementById('phoneDone').style.display = 'none';
+      document.getElementById('phoneQuiet').style.display = '';
+      document.getElementById('reentry').disabled = false;
+      document.getElementById('reentry').textContent = 'Send re-entry ping now';
+    }
+  }
+  function toggleDetail() { document.getElementById('detail').classList.toggle('open'); }
+  function sendReentry() {
+    var b = document.getElementById('reentry');
+    b.disabled = true; b.textContent = 'Ping sent to Meteor Mite';
+    document.getElementById('phoneQuiet').style.display = 'none';
+    document.getElementById('phonePing').style.display = '';
+  }
+  function answer(what) {
+    document.getElementById('phonePing').style.display = 'none';
+    var d = document.getElementById('phoneDone');
+    d.style.display = '';
+    d.innerHTML = what === 'taken'
+      ? '<div class="msg"><b>Taken.</b> Your routing score goes up, so you will be pinged more often.</div>'
+      : '<div class="msg"><b>Turned down.</b> No problem. Your next matching ping is still on its way.</div>';
+    var p = document.getElementById('mitePings');
+    p.textContent = '2';
+    document.getElementById('log').innerHTML =
+      '<b>Mite ' + what + ' the re-entry ping.</b> ' +
+      (what === 'taken' ? 'Score +0.08. Banner clears once pings are back above half of usual.' : 'Turn-down keeps the normal penalty. The 48-hour cadence continues.');
+  }
+</script>
+</body>
+</html>
